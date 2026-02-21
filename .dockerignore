@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pdf
+*.xlsx
+.env
+.env.*
+*.md
+.gitignore
+.dockerignore

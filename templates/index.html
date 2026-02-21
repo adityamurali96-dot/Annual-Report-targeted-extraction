@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial Statement Extractor</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Financial Statement Extractor</h1>
+            <p class="subtitle">Upload an annual report PDF to extract Profit &amp; Loss and Operating Expenses into Excel.</p>
+
+            <form id="upload-form" enctype="multipart/form-data">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-zone-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="12" y1="18" x2="12" y2="12"/>
+                            <line x1="9" y1="15" x2="12" y2="12"/>
+                            <line x1="15" y1="15" x2="12" y2="12"/>
+                        </svg>
+                    </div>
+                    <p class="drop-zone-text">Drag &amp; drop your PDF here</p>
+                    <p class="drop-zone-hint">or click to browse</p>
+                    <input type="file" id="file-input" name="file" accept=".pdf" hidden>
+                </div>
+
+                <div id="file-info" class="file-info" hidden>
+                    <span id="file-name"></span>
+                    <span id="file-size"></span>
+                    <button type="button" id="clear-btn" class="clear-btn" title="Remove file">&times;</button>
+                </div>
+
+                <button type="submit" id="submit-btn" class="submit-btn" disabled>
+                    <span id="btn-text">Extract to Excel</span>
+                    <span id="btn-spinner" class="spinner" hidden></span>
+                </button>
+            </form>
+
+            <div id="status" class="status" hidden></div>
+        </div>
+
+        <footer>
+            <p>Extracts Statement of Profit &amp; Loss and Operating Expenses Note from financial PDFs.</p>
+        </footer>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const fileSize = document.getElementById('file-size');
+        const clearBtn = document.getElementById('clear-btn');
+        const form = document.getElementById('upload-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const btnText = document.getElementById('btn-text');
+        const btnSpinner = document.getElementById('btn-spinner');
+        const status = document.getElementById('status');
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function showFile(file) {
+            fileName.textContent = file.name;
+            fileSize.textContent = formatSize(file.size);
+            fileInfo.hidden = false;
+            submitBtn.disabled = false;
+            dropZone.classList.add('has-file');
+            status.hidden = true;
+        }
+
+        function clearFile() {
+            fileInput.value = '';
+            fileInfo.hidden = true;
+            submitBtn.disabled = true;
+            dropZone.classList.remove('has-file');
+        }
+
+        // Click to browse
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                showFile(fileInput.files[0]);
+            }
+        });
+
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearFile();
+        });
+
+        // Drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                    fileInput.files = files;
+                    showFile(file);
+                } else {
+                    showStatus('Please select a PDF file.', 'error');
+                }
+            }
+        });
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = 'status ' + type;
+            status.hidden = false;
+        }
+
+        function setLoading(loading) {
+            submitBtn.disabled = loading;
+            btnText.textContent = loading ? 'Processing...' : 'Extract to Excel';
+            btnSpinner.hidden = !loading;
+            if (loading) {
+                showStatus('Extracting financial data from your PDF. This may take a moment for large or scanned documents...', 'info');
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!fileInput.files.length) return;
+
+            setLoading(true);
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Upload failed');
+                }
+
+                // Download the Excel file
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = response.headers.get('Content-Disposition')
+                    ?.match(/filename="?(.+?)"?$/)?.[1]
+                    || 'extracted.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showStatus('Extraction complete! Your Excel file has been downloaded.', 'success');
+            } catch (err) {
+                showStatus(err.message, 'error');
+            } finally {
+                setLoading(false);
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
